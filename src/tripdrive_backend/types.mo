@@ -2,9 +2,13 @@ import Text "mo:base/Text";
 import Principal "mo:base/Principal";
 import Float "mo:base/Float";
 import Nat "mo:base/Nat";
+import List "mo:base/List";
 
 
 module {
+
+    public type RideID = Nat;
+    public type RequestID = Nat;
 
     public type UserType = {
         #Driver;
@@ -39,10 +43,11 @@ module {
         license_plate_number: Text;
         color: Text;
         model: Text;
+        image: Blob;
     };
 
     public type RideInformation = {
-        ride_id: Nat;
+        ride_id: RideID;
         origin: CurrentSupportedLocation;
         destination: CurrentSupportedLocation;
         var passenger_count: Nat;
@@ -55,14 +60,14 @@ module {
         id: Principal;
         username: Text;
         email: Text;
-        poster: Text;
         phone_number: Text;
+        poster: Blob;
+        var ride_history: List.List<RideID>;
     };
 
     public type Driver = {
         user: User;
         car: Car;
-        license_plate_number: Text;
     };
 
     public type BookInformation = {
@@ -71,6 +76,14 @@ module {
         driver_id: Principal;
         ride_id: Nat;
         var book_status: BookStatus;
+    };
+
+    public type RideRequestType = {
+        request_id: RequestID;
+        user_id: Principal;
+        from: CurrentSupportedLocation;
+        to: CurrentSupportedLocation;
+        var price: Float;
     }
 
 }
