@@ -15,6 +15,11 @@ module {
         #Passenger;
     };
 
+    public type PaymentStatus = {
+        #Paid;
+        #NotPaid;
+    };
+
     public type RideStatus = {
         #RideRequested;
         #RideAccepted;
@@ -31,6 +36,11 @@ module {
     public type CurrentSupportedLocation = {
         #UniversityCampus;
         #HarareCityCentre;
+    };
+
+    public type TravelTimeInfo = {
+        start: Int;
+        end: Int;
     };
 
     public type Location = {
@@ -50,10 +60,18 @@ module {
         ride_id: RideID;
         origin: CurrentSupportedLocation;
         destination: CurrentSupportedLocation;
+        payment_status: PaymentStatus;
         var passenger_count: Nat;
         var price: Float;
         var ride_status: RideStatus;
-        date: Text;
+        date_time_info: TravelTimeInfo;
+    };
+
+    public type Profile = {
+        username: Text;
+        email: Text;
+        phone_number: Text;
+        poster: Blob;
     };
 
     public type User = {
@@ -84,6 +102,12 @@ module {
         from: CurrentSupportedLocation;
         to: CurrentSupportedLocation;
         var price: Float;
+    };
+
+    public type FullRequestInfo = {
+        profile: Profile;
+        request_id: RequestID;
+        price: Float;
     }
 
 }

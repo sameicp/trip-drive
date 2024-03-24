@@ -14,18 +14,16 @@ actor {
   // building the backend
   let users_map = TrieMap.TrieMap<Principal, Types.User>(Principal.equal, Principal.hash);
   let drivers_map = TrieMap.TrieMap<Principal, Types.Driver>(Principal.equal, Principal.hash);
-  let ride_information_storage = TrieMap.TrieMap<Nat, Types.RideInformation>(Nat.equal, Hash.hash);
 
-  // storing the list of passengers without a ride yet.
-  let passengers_at_uz = Buffer.Buffer<Types.User>(0);
-  let passengers_in_cbd = Buffer.Buffer<Types.User>(0);
-  let drivers_at_uz = Buffer.Buffer<Types.Driver>(0);
-  let drivers_in_cbd = Buffer.Buffer<Types.Driver>(0);
+  // a record of the rides on the platform.
+  stable var ride_information_storage = List.nil<Types.RideInformation>();
+
 
   // List for a list of requests
   stable var pool_requests = List.nil<Types.RideRequestType>();
 
   stable var request_id_counter = 0;
+  stable var ride_id_counter = 0;
 
   let default_user: Types.User = {
     id = Principal.fromText("");
@@ -107,6 +105,12 @@ actor {
     return id;
   };
 
+  func new_ride_id() : Types.RideID {
+    let id = ride_id_counter;
+    ride_id_counter += 1;
+    return id;
+  };
+
   public shared({caller}) func create_request(from: Types.CurrentSupportedLocation, to: Types.CurrentSupportedLocation, price: Float): async(Types.RequestID) {
     if(not check_user_account(caller)) {
       Debug.trap("Please start by creating an account as a user")
@@ -139,18 +143,94 @@ actor {
     };
   };
 
-  // the users can have the option to cancel the request
-  public shared({caller}) func cancel_request(id: Types.RequestID): async(Text) {
+  func check_if_user_made_request(user_id: Principal, request_id: Types.RequestID) {
     // check if the user is the one who made the request
-    let request = find_request(id);
+    let request = find_request(request_id);
 
-    if (Principal.notEqual(caller, request.user_id)) {
+    if (Principal.notEqual(user_id, request.user_id)) {
       Debug.trap("You are not the one who made the request");
     };
 
+  };
+
+  // the users can have the option to cancel the request
+  public shared({caller}) func cancel_request(id: Types.RequestID): async(Text) {
+    // check if the user is the one who made the request
+    check_if_user_made_request(caller, id);
+
     pool_requests := List.filter<Types.RideRequestType>(pool_requests, func request = request.request_id != id);
     return "request removed";
-  }
+  };
+
+  // change the price on offer
+  // am not sure if this works at all
+  // 
+  public shared({caller}) func change_price(id: Types.RequestID, new_price: Float): async() {
+    check_if_user_made_request(caller, id);
+
+    let request: Types.RideRequestType = find_request(id);
+    request.price := new_price;
+
+  };
+
+  // writing the function of the driver
+  public shared({caller}) func query_passengers_available(
+      from: Types.CurrentSupportedLocation, 
+      to: Types.CurrentSupportedLocation): async([Types.FullRequestInfo]) {
+    // check if the caller is the driver
+    let option_driver: ?Types.Driver = drivers_map.get(caller);
+    let driver: Types.Driver = switch (option_driver) {
+      case null Debug.trap("You are not a registered driver");
+      case (?driver) driver;
+    };
+
+    // select passengers to carry based on the location of the driver
+    // first change the List to an Array
+    let requests_array: [Types.RideRequestType] = List.toArray(pool_requests);
+
+    // filter the array based on driver's location
+    let local_requests: [Types.RideRequestType] = 
+      Array.filter<Types.RideRequestType>(requests_array, func request = request.from == from and request.to == to);
+
+    return passenger_details(local_requests);
+  };
+
+  // get useful user information
+  func user_info(user_id: Principal): Types.Profile {
+    // get user information
+    let option_user: ?Types.User = users_map.get(user_id);
+    let user: Types.User = switch (option_user) {
+      case null Debug.trap("User this ID " # Principal.toText(user_id) # " does not exist.");
+      case (?user) user;
+    };
+
+    let user_profile: Types.Profile = {
+      username = user.username;
+      email = user.email;
+      phone_number = user.phone_number;
+      poster = user.poster;
+    };
+    return user_profile;
+  };
+
+  // this function has to take in a list of requests and return passenger info nad the request id
+  func passenger_details(requests_list: [Types.RideRequestType]): [Types.FullRequestInfo] {
+    let output: Buffer.Buffer<Types.FullRequestInfo> = Buffer.Buffer<Types.FullRequestInfo>(10);
+
+    for(request in requests_list.vals()) {
+      let profile: Types.Profile = user_info(request.user_id);
+      let updated_info: Types.FullRequestInfo = {
+        profile;
+        request_id = request.request_id;
+        price = request.price;
+      };
+      output.add(updated_info);
+    };
+    return Buffer.toArray<Types.FullRequestInfo>(output);
+  };
+
+  // logic after the driver has selected a passenger for the trip
+  // this is the stage where we create a ride info object and add it to the list.
+  
+
 };
-
-
