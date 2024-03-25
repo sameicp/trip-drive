@@ -3,6 +3,7 @@ import Principal "mo:base/Principal";
 import Float "mo:base/Float";
 import Nat "mo:base/Nat";
 import List "mo:base/List";
+import Time "mo:base/Time";
 
 
 module {
@@ -27,10 +28,10 @@ module {
         #RideCancelled;
     };
 
-    public type BookStatus = {
-        #BookingAccepted;
-        #BookingPending;
-        #BookingDenied;
+    public type RequestStatus = {
+        #Accepted;
+        #Pending;
+        #Denied;
     };
 
     public type CurrentSupportedLocation = {
@@ -38,10 +39,10 @@ module {
         #HarareCityCentre;
     };
 
-    public type TravelTimeInfo = {
-        start: Int;
-        end: Int;
-    };
+    // public type TravelTimeInfo = {
+    //     start: Time;
+    //     var end: Time;
+    // };
 
     public type Location = {
         lat: Float;
@@ -58,13 +59,14 @@ module {
 
     public type RideInformation = {
         ride_id: RideID;
+        user_id: Principal;
+        driver_id: Principal;
         origin: CurrentSupportedLocation;
         destination: CurrentSupportedLocation;
-        payment_status: PaymentStatus;
-        var passenger_count: Nat;
+        var payment_status: PaymentStatus;
         var price: Float;
         var ride_status: RideStatus;
-        date_time_info: TravelTimeInfo;
+        date_of_ride: Nat;
     };
 
     public type Profile = {
@@ -88,19 +90,20 @@ module {
         car: Car;
     };
 
-    public type BookInformation = {
-        booking_id: Nat;
-        passenger_id: Principal;
-        driver_id: Principal;
-        ride_id: Nat;
-        var book_status: BookStatus;
-    };
+    // public type BookInformation = {
+    //     booking_id: Nat;
+    //     passenger_id: Principal;
+    //     driver_id: Principal;
+    //     ride_id: Nat;
+    //     var book_status: BookStatus;
+    // };
 
     public type RideRequestType = {
         request_id: RequestID;
         user_id: Principal;
         from: CurrentSupportedLocation;
         to: CurrentSupportedLocation;
+        var status: RequestStatus;
         var price: Float;
     };
 
@@ -108,6 +111,6 @@ module {
         profile: Profile;
         request_id: RequestID;
         price: Float;
-    }
+    };
 
 }
