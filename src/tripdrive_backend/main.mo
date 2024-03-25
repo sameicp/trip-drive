@@ -10,7 +10,8 @@ import Blob "mo:base/Blob";
 import Array "mo:base/Array";
 
 actor {
-  // building the backend
+  
+  // storage.
   let users_map = TrieMap.TrieMap<Principal, Types.User>(Principal.equal, Principal.hash);
   let drivers_map = TrieMap.TrieMap<Principal, Types.Driver>(Principal.equal, Principal.hash);
 
@@ -20,12 +21,11 @@ actor {
 
   // List for a list of requests
   stable var pool_requests = List.nil<Types.RideRequestType>();
-
   stable var request_id_counter = 0;
   stable var ride_id_counter = 0;
 
   let default_user: Types.User = {
-    id = Principal.fromText("");
+    id = Principal.fromText("2vxsx-fae");
     username = "";
     email = "";
     phone_number = "";
@@ -33,7 +33,11 @@ actor {
     var ride_history = List.nil<Types.RideID>();
   };
 
-  func check_user_account(user_id: Principal): Bool {
+  /////////////////////////
+  /// PRIVATE METHODS   ///
+  /////////////////////////
+
+  func user_has_account(user_id: Principal): Bool {
     if (Principal.isAnonymous(user_id)) { 
       Debug.trap("Annonymous id.")
     };
@@ -44,7 +48,7 @@ actor {
   };
 
   func get_user_account(user_id: Principal): Types.User {
-    if(not check_user_account(user_id)) {
+    if(not user_has_account(user_id)) {
       Debug.trap("Please start by creating an account as a user")
     };
 
@@ -53,104 +57,32 @@ actor {
     return user;
   };
 
-  public shared({caller}) func create_user_acc(
-    username: Text, 
-    email: Text, 
-    phone_number: Text, 
-    poster: Blob
-  ): async (Text) {
-  
-    if(check_user_account(caller)) {
-      Debug.trap("The user is already registered")
-    };
-
-
-    // creating the user account
-    let ride_history = List.nil<Types.RideID>();
-
-    let new_user: Types.User = {
-      id = caller;
-      username;
-      email;
-      phone_number;
-      poster;
-      var ride_history;
-    };
-
-    users_map.put(caller, new_user);
-    return "User created successfuly";
-
-  };
-
-  // First the driver have to create an account as a normal user
-  // get the driver basic infor from his user account
-  // add some additonal about the driver like his car information
-  // driver has to upload the images of his cars.
-  public shared({caller}) func create_driver_acc(car: Types.Car): async() {
-    // check if the driver has already created an account
-    // If the caller is not registered to the application he is not supposed to create an account
-    let user: Types.User = get_user_account(caller);
-
-    // check if the driver has already created an account
-    let option_driver: ?Types.Driver = drivers_map.get(caller);
-    if (Option.isSome(option_driver)) {
-      Debug.trap("Driver account already exists");
-    };
-
-    // create an account if the account does not exist
-    let new_driver: Types.Driver = {
-      user;
-      car;
-    };
-
-    // register the created account 
-    drivers_map.put(caller, new_driver);
-    
-  };
-
-  func new_request_id() : Types.RequestID {
+  func generate_request_id() : Types.RequestID {
     let id = request_id_counter;
     request_id_counter += 1;
-    return id;
+    return {
+      request_id = id;
+    };
   };
 
-  func new_ride_id() : Types.RideID {
+  func generate_ride_id() : Types.RideID {
     let id = ride_id_counter;
     ride_id_counter += 1;
-    return id;
+    return {
+      ride_id = id;
+    };
   };
 
-  public shared({caller}) func create_request(
+  func validate_inputs(
     from: Types.CurrentSupportedLocation, 
-    to: Types.CurrentSupportedLocation, 
-    price: Float
-  ): async(Types.RequestID) {
-    if(not check_user_account(caller)) {
-      Debug.trap("Please start by creating an account as a user")
-    };
-
-    // generation the id of the request
-    let request_id: Types.RequestID = new_request_id();
-
-    let status: Types.RequestStatus = #Pending;
-
-    // creating users request and add it to a list of requests
-    let request: Types.RideRequestType = {
-      request_id;
-      user_id = caller;
-      from;
-      to;
-      var status;
-      var price;
-    };
-
-    // adding the request into a pool of request
-    pool_requests := List.push(request, pool_requests);
-    return request_id;
-
+    to: Types.CurrentSupportedLocation
+  ) {
+    if (from == to) {
+      Debug.trap("select another destination.");
+    }
   };
 
-  /// Define an internal helper function to retrieve auctions by ID:
+  /// Define an internal helper function to retrieve requests by ID:
   func find_request(request_id : Types.RequestID) : Types.RideRequestType {
     let result = 
       List.find<Types.RideRequestType>(pool_requests, func request = request.request_id == request_id);
@@ -168,56 +100,6 @@ actor {
       Debug.trap("You are not the one who made the request");
     };
 
-  };
-
-  // the users can have the option to cancel the request
-  public shared({caller}) func cancel_request(id: Types.RequestID): async(Text) {
-    // check if the user is the one who made the request
-    check_if_user_made_request(caller, id);
-
-    pool_requests := 
-      List.filter<Types.RideRequestType>(pool_requests, func request = request.request_id != id);
-    return "request removed";
-  };
-
-  // change the price on offer
-  // am not sure if this works at all
-  // 
-  public shared({caller}) func change_price(
-    id: Types.RequestID, 
-    new_price: Float
-  ): async() {
-    check_if_user_made_request(caller, id);
-
-    let request: Types.RideRequestType = find_request(id);
-    request.price := new_price;
-
-  };
-
-  // writing the function of the driver
-  public shared({caller}) func query_passengers_available(
-      from: Types.CurrentSupportedLocation, 
-      to: Types.CurrentSupportedLocation
-    ): async([Types.FullRequestInfo]) {
-    // check if the caller is the driver
-    let option_driver: ?Types.Driver = drivers_map.get(caller);
-    let driver: Types.Driver = switch (option_driver) {
-      case null Debug.trap("You are not a registered driver");
-      case (?driver) driver;
-    };
-
-    // select passengers to carry based on the location of the driver
-    // first change the List to an Array
-    let requests_array: [Types.RideRequestType] = List.toArray(pool_requests);
-
-    // filter the array based on driver's location
-    let local_requests: [Types.RideRequestType] = 
-      Array.filter<Types.RideRequestType>(
-        requests_array, 
-        func request = request.from == from and request.to == to
-      );
-
-    return passenger_details(local_requests);
   };
 
   // get useful user information
@@ -255,29 +137,10 @@ actor {
     return Buffer.toArray<Types.FullRequestInfo>(output);
   };
 
-  // logic after the driver has selected a passenger for the trip
-  // this is the stage where we create a ride info object and add it to the list.
-  public shared({caller}) func selected_user(request_id: Types.RequestID, date_of_ride: Nat): async() {
-    // get the request if it exist
-    let request: Types.RideRequestType = find_request(request_id);
-
-    // update the request status to be accepted
-    request.status := #Accepted;
-
-    // approve the ride if the driver has selected the user
-    approve_ride(caller, request, date_of_ride);
-  };
-
-  // after the driver has selected a user they must communicate how they are going to meet and at what time
-  // the information must reflect on the users side.
-  // they can use whatsapp to communicate
-  // they can use email to communicate
-  // they can communicate on the IC. but how?f
-
-  func approve_ride(id: Principal, request: Types.RideRequestType, date_of_ride: Nat): () {
-    let ride_id = create_ride_object(request, date_of_ride, id);
+  func approve_ride(driver_id: Principal, request: Types.RideRequestType, date_of_ride: Nat): () {
+    let ride_id = create_ride_object(request, date_of_ride, driver_id);
     add_ride_id_to_passenger(request.user_id, ride_id);
-    add_ride_to_driver(id, ride_id);
+    add_ride_to_driver(driver_id, ride_id);
   };
 
   func create_ride_object(
@@ -287,7 +150,7 @@ actor {
   ): Types.RideID {
     
     let ride_info: Types.RideInformation = {
-      ride_id = new_ride_id();
+      ride_id = generate_ride_id();
       user_id = request.user_id;
       driver_id;
       origin = request.from;
@@ -334,7 +197,162 @@ actor {
     };
   };
 
-  public shared({caller}) func update_finished_ride(ride_id: Types.RideID) {
+  func driver_already_exists(id: Principal) {
+    let option_driver: ?Types.Driver = drivers_map.get(id);
+
+    if (Option.isSome(option_driver)) {
+      Debug.trap("Driver account already exists");
+    };
+  };
+
+  func _create_request(request_id: Types.RequestID, user_id: Principal, request_input: Types.RequestInput): Types.RideRequestType {
+    return {
+      request_id;
+      user_id;
+      from = request_input.from;
+      to = request_input.to;
+      var status = #Pending;
+      var price = request_input.price;
+    };
+  };
+
+  func validate_driver(driver_id: Principal) {
+    // check if the caller is the driver
+    let option_driver: ?Types.Driver = drivers_map.get(driver_id);
+
+    if (Option.isNull(option_driver)) {
+      Debug.trap("Driver not registered");
+    };
+  };
+
+  func create_user(id: Principal, user_input: Types.UserInput): Types.User {
+    let ride_history = List.nil<Types.RideID>();
+    return {
+      id;
+      username = user_input.username;
+      email = user_input.email;
+      phone_number = user_input.phone_number;
+      poster = user_input.poster;
+      var ride_history;
+    };
+  };
+
+  ////////////////////
+  // PUBLIC METHODS //
+  ////////////////////
+
+  ///////////////////////
+  // Passenger Methods //
+  ///////////////////////
+
+  public shared({caller}) func create_user_acc(user_input: Types.UserInput): async (Text) {
+    if(user_has_account(caller)) {
+      Debug.trap("The user is already registered")
+    };
+
+    // creating the user account
+    let new_user: Types.User = create_user(caller, user_input);
+
+    users_map.put(caller, new_user);
+    return "User created successfuly";
+
+  };
+
+  public shared({caller}) func create_request(request_input: Types.RequestInput): async(Types.RequestID) {
+    if(not user_has_account(caller)) {
+      Debug.trap("Please start by creating an account as a user")
+    };
+
+    validate_inputs(request_input.from, request_input.to);
+
+    // generation the id of the request
+    let request_id: Types.RequestID = generate_request_id();
+
+    // creating users request and add it to a list of requests
+    let request: Types.RideRequestType = _create_request(request_id, caller, request_input);
+
+    // adding the request into a pool of request
+    pool_requests := List.push(request, pool_requests);
+    return request_id;
+  };
+
+  // the users can have the option to cancel the request
+  public shared({caller}) func cancel_request(id: Types.RequestID): async(Text) {
+    // check if the user is the one who made the request
+    check_if_user_made_request(caller, id);
+
+    pool_requests := 
+      List.filter<Types.RideRequestType>(pool_requests, func request = request.request_id != id);
+    return "request removed";
+  };
+
+  // change the price on offer
+  // am not sure if this works at all
+  // 
+  public shared({caller}) func change_price(id: Types.RequestID, new_price: Float): async() {
+    check_if_user_made_request(caller, id);
+
+    let request: Types.RideRequestType = find_request(id);
+    request.price := new_price;
+  };
+
+
+  //////////////////////
+  // Driver's Methods //
+  //////////////////////
+
+  // writing the function of the driver
+  public shared({caller}) func query_passengers_available(query_passengers: Types.QueryPassengers): async([Types.FullRequestInfo]) {
+    validate_driver(caller);
+
+    let requests_array: [Types.RideRequestType] = List.toArray(pool_requests);
+
+    // filter the array based on driver's location
+    let local_requests: [Types.RideRequestType] = 
+      Array.filter<Types.RideRequestType>(
+        requests_array, 
+        func request = request.from == query_passengers.from and request.to == query_passengers.to
+      );
+
+    return passenger_details(local_requests);
+  };
+
+  // First the driver have to create an account as a normal user
+  // get the driver basic infor from his user account
+  // add some additonal about the driver like his car information
+  // driver has to upload the images of his cars.
+  public shared({caller}) func register_car(car: Types.Car): async() {
+    // check if the driver has already created an account
+    driver_already_exists(caller);
+
+    // If the caller is not registered to the application he is not supposed to create an account
+    let user: Types.User = get_user_account(caller);
+
+    // create an account if the account does not exist
+    let new_driver: Types.Driver = {
+      user;
+      car;
+    };
+
+    // register the created account 
+    drivers_map.put(caller, new_driver);
+    
+  };
+
+  // logic after the driver has selected a passenger for the trip
+  // this is the stage where we create a ride info object and add it to the list.
+  public shared({caller}) func select_user(request_id: Types.RequestID, date_of_ride: Nat): async() {
+    // get the request if it exist
+    let request: Types.RideRequestType = find_request(request_id);
+
+    // update the request status to be accepted
+    request.status := #Accepted;
+
+    // approve the ride if the driver has selected the user
+    approve_ride(caller, request, date_of_ride);
+  };
+
+  public shared({caller}) func finished_ride(ride_id: Types.RideID) {
     let ride: Types.RideInformation = get_ride_object(ride_id);
 
     if(Principal.notEqual(ride.user_id, caller)) {

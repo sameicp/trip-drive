@@ -8,8 +8,13 @@ import Time "mo:base/Time";
 
 module {
 
-    public type RideID = Nat;
-    public type RequestID = Nat;
+    public type RideID = {
+        ride_id: Nat;
+    };
+
+    public type RequestID = {
+        request_id: Nat;
+    };
 
     public type UserType = {
         #Driver;
@@ -53,7 +58,7 @@ module {
         name: Text;
         license_plate_number: Text;
         color: Text;
-        model: Text;
+        car_model: Text;
         image: Blob;
     };
 
@@ -111,6 +116,26 @@ module {
         profile: Profile;
         request_id: RequestID;
         price: Float;
+    };
+
+    // creating types for inputs
+
+    public type UserInput = {
+        username: Text; 
+        email: Text;
+        phone_number: Text; 
+        poster: Blob;
+    };
+
+    public type RequestInput = {
+        from: CurrentSupportedLocation;
+        to: CurrentSupportedLocation;
+        price: Float;
+    };
+
+    public type QueryPassengers = {
+        from: CurrentSupportedLocation;
+        to: CurrentSupportedLocation;
     };
 
 }
