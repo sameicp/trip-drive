@@ -3,7 +3,6 @@ import Principal "mo:base/Principal";
 import Float "mo:base/Float";
 import Nat "mo:base/Nat";
 import List "mo:base/List";
-import Time "mo:base/Time";
 
 
 module {
@@ -43,11 +42,6 @@ module {
         #UniversityCampus;
         #HarareCityCentre;
     };
-
-    // public type TravelTimeInfo = {
-    //     start: Time;
-    //     var end: Time;
-    // };
 
     public type Location = {
         lat: Float;
@@ -94,14 +88,6 @@ module {
         user: User;
         car: Car;
     };
-
-    // public type BookInformation = {
-    //     booking_id: Nat;
-    //     passenger_id: Principal;
-    //     driver_id: Principal;
-    //     ride_id: Nat;
-    //     var book_status: BookStatus;
-    // };
 
     public type RideRequestType = {
         request_id: RequestID;
