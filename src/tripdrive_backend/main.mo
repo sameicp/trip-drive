@@ -8,6 +8,8 @@ import Debug "mo:base/Debug"; // use when the canister traps.
 import Option "mo:base/Option";
 import Blob "mo:base/Blob";
 import Array "mo:base/Array";
+import Result "mo:base/Result";
+import Error "mo:base/Error";
 
 actor {
   
@@ -245,55 +247,72 @@ actor {
   // Passenger Methods //
   ///////////////////////
 
-  public shared({caller}) func create_user_acc(user_input: T.UserInput): async (Text) {
-    if(user_has_account(caller)) {
-      Debug.trap("The user is already registered")
-    };
+  public shared({caller}) func create_user_acc(user_input: T.UserInput): async (Result.Result<Text, Text>) {
+    try {
+      if(user_has_account(caller)) {
+        Debug.trap("The user is already registered")
+      };
 
-    // creating the user account
-    let new_user: T.User = create_user(caller, user_input);
+      // creating the user account
+      let new_user: T.User = create_user(caller, user_input);
 
-    users_map.put(caller, new_user);
-    return "User created successfuly";
+      users_map.put(caller, new_user);
+      return #ok("User created successfuly");
+    } catch e {
+      return #err(Error.message(e))
+    }
 
   };
 
-  public shared({caller}) func create_request(request_input: T.RequestInput): async(T.RequestID) {
-    if(not user_has_account(caller)) {
-      Debug.trap("Please start by creating an account as a user")
-    };
+  public shared({caller}) func create_request(request_input: T.RequestInput): async(Result.Result<T.RequestID, Text>) {
+    try {
+      if(not user_has_account(caller)) {
+        Debug.trap("Please start by creating an account as a user")
+      };
 
-    validate_inputs(request_input.from, request_input.to);
+      validate_inputs(request_input.from, request_input.to);
 
-    // generation the id of the request
-    let request_id: T.RequestID = generate_request_id();
+      // generation the id of the request
+      let request_id: T.RequestID = generate_request_id();
 
-    // creating users request and add it to a list of requests
-    let request: T.RideRequestType = _create_request(request_id, caller, request_input);
+      // creating users request and add it to a list of requests
+      let request: T.RideRequestType = _create_request(request_id, caller, request_input);
 
-    // adding the request into a pool of request
-    pool_requests := List.push(request, pool_requests);
-    return request_id;
+      // adding the request into a pool of request
+      pool_requests := List.push(request, pool_requests);
+      return #ok(request_id);
+    } catch e {
+      return #err(Error.message(e));
+    }
   };
 
   // the users can have the option to cancel the request
-  public shared({caller}) func cancel_request(id: T.RequestID): async(Text) {
-    // check if the user is the one who made the request
-    check_if_user_made_request(caller, id);
+  public shared({caller}) func cancel_request(id: T.RequestID): async(Result.Result<Text, Text>) {
+    try {
+      // check if the user is the one who made the request
+      check_if_user_made_request(caller, id);
 
-    pool_requests := 
-      List.filter<T.RideRequestType>(pool_requests, func request = request.request_id != id);
-    return "request removed";
+      pool_requests := 
+        List.filter<T.RideRequestType>(pool_requests, func request = request.request_id != id);
+      return #ok("request removed");
+    } catch e {
+      return #err(Error.message(e))
+    }
   };
 
   // change the price on offer
   // am not sure if this works at all
   // 
-  public shared({caller}) func change_price(id: T.RequestID, new_price: Float): async() {
-    check_if_user_made_request(caller, id);
+  public shared({caller}) func change_price(id: T.RequestID, new_price: Float): async(Result.Result<(), Text>) {
+    try {
+      check_if_user_made_request(caller, id);
 
-    let request: T.RideRequestType = find_request(id);
-    request.price := new_price;
+      let request: T.RideRequestType = find_request(id);
+      request.price := new_price;
+      return #ok()
+    } catch e {
+      return #err(Error.message(e));
+    }
   };
 
 
@@ -302,64 +321,83 @@ actor {
   //////////////////////
 
   // writing the function of the driver
-  public shared({caller}) func query_passengers_available(query_passengers: T.QueryPassengers): async([T.FullRequestInfo]) {
-    validate_driver(caller);
+  public shared({caller}) func query_passengers_available(query_passengers: T.QueryPassengers): async(Result.Result<[T.FullRequestInfo], Text>) {
+    try {
+      validate_driver(caller);
 
-    let requests_array: [T.RideRequestType] = List.toArray(pool_requests);
+      let requests_array: [T.RideRequestType] = List.toArray(pool_requests);
 
-    // filter the array based on driver's location
-    let local_requests: [T.RideRequestType] = 
-      Array.filter<T.RideRequestType>(
-        requests_array, 
-        func request = request.from == query_passengers.from and request.to == query_passengers.to
-      );
+      // filter the array based on driver's location
+      let local_requests: [T.RideRequestType] = 
+        Array.filter<T.RideRequestType>(
+          requests_array, 
+          func request = request.from == query_passengers.from and request.to == query_passengers.to
+        );
 
-    return passenger_details(local_requests);
+      return #ok(passenger_details(local_requests));
+    } catch e {
+      return #err(Error.message(e));
+    }
   };
 
   // First the driver have to create an account as a normal user
   // get the driver basic infor from his user account
   // add some additonal about the driver like his car information
   // driver has to upload the images of his cars.
-  public shared({caller}) func register_car(car: T.Car): async() {
-    // check if the driver has already created an account
-    driver_already_exists(caller);
+  public shared({caller}) func register_car(car: T.Car): async(Result.Result<(), Text>) {
+    try {
+      // check if the driver has already created an account
+      driver_already_exists(caller);
 
-    // If the caller is not registered to the application he is not supposed to create an account
-    let user: T.User = get_user_account(caller);
+      // If the caller is not registered to the application he is not supposed to create an account
+      let user: T.User = get_user_account(caller);
 
-    // create an account if the account does not exist
-    let new_driver: T.Driver = {
-      user;
-      car;
-    };
+      // create an account if the account does not exist
+      let new_driver: T.Driver = {
+        user;
+        car;
+      };
 
-    // register the created account 
-    drivers_map.put(caller, new_driver);
+      // register the created account 
+      drivers_map.put(caller, new_driver);
+      return #ok()
+    } catch e {
+      return #err(Error.message(e))
+    }
     
   };
 
   // logic after the driver has selected a passenger for the trip
   // this is the stage where we create a ride info object and add it to the list.
-  public shared({caller}) func select_user(request_id: T.RequestID, date_of_ride: Nat): async() {
-    // get the request if it exist
-    let request: T.RideRequestType = find_request(request_id);
+  public shared({caller}) func select_user(request_id: T.RequestID, date_of_ride: Nat): async(Result.Result<(), Text>) {
+    try{
+      // get the request if it exist
+      let request: T.RideRequestType = find_request(request_id);
 
-    // update the request status to be accepted
-    request.status := #Accepted;
+      // update the request status to be accepted
+      request.status := #Accepted;
 
-    // approve the ride if the driver has selected the user
-    approve_ride(caller, request, date_of_ride);
+      // approve the ride if the driver has selected the user
+      approve_ride(caller, request, date_of_ride);
+      return #ok();
+    } catch e {
+      return #err(Error.message(e));
+    }
   };
 
-  public shared({caller}) func finished_ride(ride_id: T.RideID) {
-    let ride: T.RideInformation = get_ride_object(ride_id);
+  public shared({caller}) func finished_ride(ride_id: T.RideID): async(Result.Result<(), Text>) {
+    try {
+      let ride: T.RideInformation = get_ride_object(ride_id);
 
-    if(Principal.notEqual(ride.user_id, caller)) {
-      Debug.trap("not authorized to execute this function");
-    };
-    ride.ride_status := #RideCompleted;
-    ride.payment_status := #Paid;
+      if(Principal.notEqual(ride.user_id, caller)) {
+        Debug.trap("not authorized to execute this function");
+      };
+      ride.ride_status := #RideCompleted;
+      ride.payment_status := #Paid;
+      return #ok();
+    } catch e {
+      return #err(Error.message(e));
+    }
   }
 
 };
