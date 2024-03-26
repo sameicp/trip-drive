@@ -35,6 +35,32 @@ dfx canister call tripdrive_backend cancel_request '(record {request_id = 0})'
 Register a Vehicle
 
 ```bash
-dfx canister call tripdrive_backend register_car '(re
-cord {name = "Toyota"; license_plate_number = "AAA:1232"; color = "Blue"; car_model = "Runnx"; image = vec{2; 6; 12; 32; 22}})'
+dfx canister call tripdrive_backend register_car '(record {name = "Toyota"; license_plate_number = "AAA:1232"; color = "Blue"; car_model = "Runnx"; image = vec{2; 6; 12; 32; 22}})'
+```
+
+Creating a Driver
+
+```bash
+dfx identity new driver
+dfx identity use driver
+dfx canister call tripdrive_backend create_user_acc 'record{username="Salim"; email="salim@gmail.com"; phone_number="0771212234"; poster=vec {121; 122; 39}}'
+dfx canister call tripdrive_backend register_car '(record {name = "Toyota"; license_plate_number = "AAA:1232"; color = "Blue"; car_model = "Runnx"; image = vec{2; 6; 12; 32; 22}})'
+```
+
+Check for people for a Ride
+
+```bash
+dfx canister call tripdrive_backend query_passengers_available 'record {from = variant{UniversityCampus = null}; to = variant {HarareCityCentre = null}}'
+```
+
+Select passengers
+
+```bash
+dfx canister call tripdrive_backend select_passenger '(record {request_id=0}, 1234245566)
+```
+
+Passenger check the status of the request
+
+```bash
+dfx canister call tripdrive_backend get_request_status '(record {request_id = 0})'
 ```

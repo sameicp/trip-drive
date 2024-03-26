@@ -302,7 +302,6 @@ actor {
 
   // change the price on offer
   // am not sure if this works at all
-  // 
   public shared({caller}) func change_price(id: T.RequestID, new_price: Float): async(Result.Result<(), Text>) {
     try {
       check_if_user_made_request(caller, id);
@@ -315,6 +314,15 @@ actor {
     }
   };
 
+  public shared({caller}) func get_request_status(request_id: T.RequestID): async(Result.Result<T.RequestStatus, Text>) {
+    try {
+      check_if_user_made_request(caller, request_id);
+      let request: T.RideRequestType = find_request(request_id);
+      return #ok(request.status);
+    } catch e {
+      return #err(Error.message(e));
+    };
+  };
 
   //////////////////////
   // Driver's Methods //
@@ -369,7 +377,7 @@ actor {
 
   // logic after the driver has selected a passenger for the trip
   // this is the stage where we create a ride info object and add it to the list.
-  public shared({caller}) func select_user(request_id: T.RequestID, date_of_ride: Nat): async(Result.Result<(), Text>) {
+  public shared({caller}) func select_passenger(request_id: T.RequestID, date_of_ride: Nat): async(Result.Result<(), Text>) {
     try{
       // get the request if it exist
       let request: T.RideRequestType = find_request(request_id);
@@ -398,6 +406,14 @@ actor {
     } catch e {
       return #err(Error.message(e));
     }
+  };
+
+  public func get_users_number(): async(Nat) {
+    return users_map.size();
+  };
+
+  public func get_drivers_number(): async(Nat) {
+    return drivers_map.size();
   }
 
 };
