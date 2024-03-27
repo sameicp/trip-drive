@@ -26,7 +26,6 @@ module {
     };
 
     public type RideStatus = {
-        #RideRequested;
         #RideAccepted;
         #RideCompleted;
         #RideCancelled;

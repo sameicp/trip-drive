@@ -178,7 +178,6 @@ actor {
   // add the ride information to the driver's history to keep statistics
   func add_ride_to_driver(driver_id: Principal, ride_id: T.RideID) {
     let option_driver: ?T.Driver = drivers_map.get(driver_id);
-    
     let driver: T.Driver = switch (option_driver) {
       case null Debug.trap("User this ID " # Principal.toText(driver_id) # " does not exist.");
       case (?driver) driver;
@@ -221,7 +220,6 @@ actor {
   func validate_driver(driver_id: Principal) {
     // check if the caller is the driver
     let option_driver: ?T.Driver = drivers_map.get(driver_id);
-
     if (Option.isNull(option_driver)) {
       Debug.trap("Driver not registered");
     };
@@ -236,6 +234,34 @@ actor {
       phone_number = user_input.phone_number;
       poster = user_input.poster;
       var ride_history;
+    };
+  };
+
+  func filter_request(requests_array: [T.RideRequestType], query_passengers: T.QueryPassengers): [T.RideRequestType] {
+    return Array.filter<T.RideRequestType>(
+          requests_array, 
+          func request = 
+            request.from == query_passengers.from 
+            and request.to == query_passengers.to 
+            and request.status != #Accepted
+        );
+  };
+
+  func create_driver_object(user: T.User, car: T.Car): T.Driver {
+    return {
+        user;
+        car;
+      };
+  };
+
+  func remove_request(request_id: T.RequestID) {
+    pool_requests := 
+        List.filter<T.RideRequestType>(pool_requests, func request = request.request_id != request_id);
+  };
+
+  func check_principals(from_request: Principal, caller: Principal) {
+    if(Principal.notEqual(from_request, caller)) {
+      Debug.trap("not authorized to execute this function");
     };
   };
 
@@ -255,7 +281,6 @@ actor {
 
       // creating the user account
       let new_user: T.User = create_user(caller, user_input);
-
       users_map.put(caller, new_user);
       return #ok("User created successfuly");
     } catch e {
@@ -271,13 +296,10 @@ actor {
       };
 
       validate_inputs(request_input.from, request_input.to);
-
       // generation the id of the request
       let request_id: T.RequestID = generate_request_id();
-
       // creating users request and add it to a list of requests
       let request: T.RideRequestType = _create_request(request_id, caller, request_input);
-
       // adding the request into a pool of request
       pool_requests := List.push(request, pool_requests);
       return #ok(request_id);
@@ -291,9 +313,7 @@ actor {
     try {
       // check if the user is the one who made the request
       check_if_user_made_request(caller, id);
-
-      pool_requests := 
-        List.filter<T.RideRequestType>(pool_requests, func request = request.request_id != id);
+      remove_request(id);
       return #ok("request removed");
     } catch e {
       return #err(Error.message(e))
@@ -305,7 +325,6 @@ actor {
   public shared({caller}) func change_price(id: T.RequestID, new_price: Float): async(Result.Result<(), Text>) {
     try {
       check_if_user_made_request(caller, id);
-
       let request: T.RideRequestType = find_request(id);
       request.price := new_price;
       return #ok()
@@ -332,16 +351,9 @@ actor {
   public shared({caller}) func query_passengers_available(query_passengers: T.QueryPassengers): async(Result.Result<[T.FullRequestInfo], Text>) {
     try {
       validate_driver(caller);
-
       let requests_array: [T.RideRequestType] = List.toArray(pool_requests);
-
       // filter the array based on driver's location
-      let local_requests: [T.RideRequestType] = 
-        Array.filter<T.RideRequestType>(
-          requests_array, 
-          func request = request.from == query_passengers.from and request.to == query_passengers.to
-        );
-
+      let local_requests: [T.RideRequestType] = filter_request(requests_array, query_passengers);
       return #ok(passenger_details(local_requests));
     } catch e {
       return #err(Error.message(e));
@@ -356,16 +368,10 @@ actor {
     try {
       // check if the driver has already created an account
       driver_already_exists(caller);
-
       // If the caller is not registered to the application he is not supposed to create an account
       let user: T.User = get_user_account(caller);
-
       // create an account if the account does not exist
-      let new_driver: T.Driver = {
-        user;
-        car;
-      };
-
+      let new_driver: T.Driver = create_driver_object(user, car);
       // register the created account 
       drivers_map.put(caller, new_driver);
       return #ok()
@@ -381,10 +387,8 @@ actor {
     try{
       // get the request if it exist
       let request: T.RideRequestType = find_request(request_id);
-
       // update the request status to be accepted
       request.status := #Accepted;
-
       // approve the ride if the driver has selected the user
       approve_ride(caller, request, date_of_ride);
       return #ok();
@@ -396,10 +400,7 @@ actor {
   public shared({caller}) func finished_ride(ride_id: T.RideID): async(Result.Result<(), Text>) {
     try {
       let ride: T.RideInformation = get_ride_object(ride_id);
-
-      if(Principal.notEqual(ride.user_id, caller)) {
-        Debug.trap("not authorized to execute this function");
-      };
+      check_principals(ride.user_id, caller);
       ride.ride_status := #RideCompleted;
       ride.payment_status := #Paid;
       return #ok();
