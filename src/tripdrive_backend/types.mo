@@ -82,7 +82,7 @@ module {
         poster: Blob;
         var ride_history: List.List<RideID>;
     };
-
+     
     public type Driver = {
         user: User;
         car: Car;
