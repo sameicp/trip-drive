@@ -39,7 +39,7 @@ actor {
   /// PRIVATE METHODS   ///
   /////////////////////////
 
-  func user_has_account(user_id: Principal): Bool {
+  func user_has_account(user_id: Principal): async Bool {
     if (Principal.isAnonymous(user_id)) { 
       Debug.trap("Annonymous id.")
     };
@@ -50,10 +50,6 @@ actor {
   };
 
   func get_user_account(user_id: Principal): T.User {
-    if(not user_has_account(user_id)) {
-      Debug.trap("Please start by creating an account as a user")
-    };
-
     let option_user: ?T.User = users_map.get(user_id);
     let user: T.User = Option.get(option_user, default_user);
     return user;
@@ -78,26 +74,30 @@ actor {
   func validate_inputs(
     from: T.CurrentSupportedLocation, 
     to: T.CurrentSupportedLocation
-  ) {
+  ): async() {
     if (from == to) {
       Debug.trap("select another destination.");
     }
   };
 
   /// Define an internal helper function to retrieve requests by ID:
-  func find_request(request_id : T.RequestID) : T.RideRequestType {
-    let result = 
+  func find_request(request_id : T.RequestID) : ?T.RideRequestType {
+    let result: ?T.RideRequestType = 
       List.find<T.RideRequestType>(pool_requests, func request = request.request_id == request_id);
-    switch (result) {
-      case null Debug.trap("Inexistent id");
-      case (?request) return request;
+    return result;
+  };
+
+  func extract_request(request_id : T.RequestID): T.RideRequestType {
+    let request_option = find_request(request_id);
+    return switch (request_option) {
+      case null Debug.trap("Request id does not exist.");
+      case (?request) request;
     };
   };
 
-  func check_if_user_made_request(user_id: Principal, request_id: T.RequestID) {
+  func check_if_user_made_request(user_id: Principal, request_id: T.RequestID): async() {
     // check if the user is the one who made the request
-    let request = find_request(request_id);
-
+    let request: T.RideRequestType = extract_request(request_id);
     if (Principal.notEqual(user_id, request.user_id)) {
       Debug.trap("You are not the one who made the request");
     };
@@ -105,7 +105,7 @@ actor {
   };
 
   // get useful user information
-  func user_info(user_id: Principal): T.Profile {
+  func user_info(user_id: Principal): async T.Profile {
     // get user information
     let option_user: ?T.User = users_map.get(user_id);
     let user: T.User = switch (option_user) {
@@ -123,12 +123,12 @@ actor {
   };
 
   // this function has to take in a list of requests and return passenger info nad the request id
-  func passenger_details(requests_list: [T.RideRequestType]): [T.FullRequestInfo] {
+  func passenger_details(requests_list: [T.RideRequestType]): async [T.FullRequestInfo] {
     let output: Buffer.Buffer<T.FullRequestInfo> = 
       Buffer.Buffer<T.FullRequestInfo>(10);
 
     for(request in requests_list.vals()) {
-      let profile: T.Profile = user_info(request.user_id);
+      let profile: T.Profile = await user_info(request.user_id);
       let updated_info: T.FullRequestInfo = {
         profile;
         request_id = request.request_id;
@@ -139,10 +139,10 @@ actor {
     return Buffer.toArray<T.FullRequestInfo>(output);
   };
 
-  func approve_ride(driver_id: Principal, request: T.RideRequestType, date_of_ride: Nat): () {
+  func approve_ride(driver_id: Principal, request: T.RideRequestType, date_of_ride: Nat): async () {
     let ride_id = create_ride_object(request, date_of_ride, driver_id);
     add_ride_id_to_passenger(request.user_id, ride_id);
-    add_ride_to_driver(driver_id, ride_id);
+    await add_ride_to_driver(driver_id, ride_id);
   };
 
   func create_ride_object(
@@ -176,7 +176,7 @@ actor {
   };
 
   // add the ride information to the driver's history to keep statistics
-  func add_ride_to_driver(driver_id: Principal, ride_id: T.RideID) {
+  func add_ride_to_driver(driver_id: Principal, ride_id: T.RideID): async() {
     let option_driver: ?T.Driver = drivers_map.get(driver_id);
     let driver: T.Driver = switch (option_driver) {
       case null Debug.trap("User this ID " # Principal.toText(driver_id) # " does not exist.");
@@ -187,18 +187,23 @@ actor {
 
   };
 
-  func get_ride_object(ride_id: T.RideID): T.RideInformation {
-    let result = List.find<T.RideInformation>(
+  func get_ride_option(ride_id: T.RideID): ?T.RideInformation {
+    let ride_option: ?T.RideInformation = List.find<T.RideInformation>(
       ride_information_storage, 
       func ride = ride.ride_id ==ride_id
     );
-    switch (result) {
-      case null Debug.trap("Inexistent id");
+    return ride_option;
+  };
+
+  func get_ride(ride_id: T.RideID): T.RideInformation {
+    let ride_option: ?T.RideInformation = get_ride_option(ride_id);
+    return switch (ride_option) {
+      case null Debug.trap("Inexistent ride id");
       case (?ride) return ride;
     };
   };
 
-  func driver_already_exists(id: Principal) {
+  func driver_already_exists(id: Principal): async() {
     let option_driver: ?T.Driver = drivers_map.get(id);
 
     if (Option.isSome(option_driver)) {
@@ -217,7 +222,7 @@ actor {
     };
   };
 
-  func validate_driver(driver_id: Principal) {
+  func validate_driver(driver_id: Principal): async() {
     // check if the caller is the driver
     let option_driver: ?T.Driver = drivers_map.get(driver_id);
     if (Option.isNull(option_driver)) {
@@ -259,9 +264,41 @@ actor {
         List.filter<T.RideRequestType>(pool_requests, func request = request.request_id != request_id);
   };
 
-  func check_principals(from_request: Principal, caller: Principal) {
+  func check_principals(from_request: Principal, caller: Principal): async(){
     if(Principal.notEqual(from_request, caller)) {
       Debug.trap("not authorized to execute this function");
+    };
+  };
+
+  func update_ride_status(ride: T.RideInformation) {
+    ride.ride_status := #RideCompleted;
+    ride.payment_status := #Paid;
+  };
+
+  func check_account(user_id:Principal): async() {
+    if(await user_has_account(user_id)) {
+      Debug.trap("The user is already registered")
+    };
+  };
+
+  func check_user(user_id: Principal): async() {
+    let is_user: Bool = await user_has_account(user_id);
+    if(not is_user) {
+      Debug.trap("Please start by creating an account as a user")
+    };
+  };
+
+  func check_ride_info(ride_id: T.RideID): async () {
+    let ride_option: ?T.RideInformation = get_ride_option(ride_id);
+    if(Option.isNull(ride_option)) {
+      Debug.trap("The information is not found.")
+    };
+  };
+
+  func check_request(request_id: T.RequestID): async () {
+    let request_option: ?T.RideRequestType = find_request(request_id);
+    if(Option.isNull(request_option)) {
+      Debug.trap("Request does not exist");
     };
   };
 
@@ -275,10 +312,7 @@ actor {
 
   public shared({caller}) func create_user_acc(user_input: T.UserInput): async (Result.Result<Text, Text>) {
     try {
-      if(user_has_account(caller)) {
-        Debug.trap("The user is already registered")
-      };
-
+      await check_account(caller);
       // creating the user account
       let new_user: T.User = create_user(caller, user_input);
       users_map.put(caller, new_user);
@@ -291,11 +325,8 @@ actor {
 
   public shared({caller}) func create_request(request_input: T.RequestInput): async(Result.Result<T.RequestID, Text>) {
     try {
-      if(not user_has_account(caller)) {
-        Debug.trap("Please start by creating an account as a user")
-      };
-
-      validate_inputs(request_input.from, request_input.to);
+      await check_user(caller);
+      await validate_inputs(request_input.from, request_input.to);
       // generation the id of the request
       let request_id: T.RequestID = generate_request_id();
       // creating users request and add it to a list of requests
@@ -312,7 +343,7 @@ actor {
   public shared({caller}) func cancel_request(id: T.RequestID): async(Result.Result<Text, Text>) {
     try {
       // check if the user is the one who made the request
-      check_if_user_made_request(caller, id);
+      await check_if_user_made_request(caller, id);
       remove_request(id);
       return #ok("request removed");
     } catch e {
@@ -322,10 +353,12 @@ actor {
 
   // change the price on offer
   // am not sure if this works at all
-  public shared({caller}) func change_price(id: T.RequestID, new_price: Float): async(Result.Result<(), Text>) {
+  public shared({caller}) func change_price(request_id: T.RequestID, new_price: Float): async(Result.Result<(), Text>) {
     try {
-      check_if_user_made_request(caller, id);
-      let request: T.RideRequestType = find_request(id);
+      await check_if_user_made_request(caller, request_id);
+      await check_request(request_id);
+
+      let request: T.RideRequestType = extract_request(request_id);
       request.price := new_price;
       return #ok()
     } catch e {
@@ -335,8 +368,9 @@ actor {
 
   public shared({caller}) func get_request_status(request_id: T.RequestID): async(Result.Result<T.RequestStatus, Text>) {
     try {
-      check_if_user_made_request(caller, request_id);
-      let request: T.RideRequestType = find_request(request_id);
+      await check_if_user_made_request(caller, request_id);
+      await check_request(request_id);
+      let request: T.RideRequestType = extract_request(request_id);
       return #ok(request.status);
     } catch e {
       return #err(Error.message(e));
@@ -350,11 +384,11 @@ actor {
   // writing the function of the driver
   public shared({caller}) func query_passengers_available(query_passengers: T.QueryPassengers): async(Result.Result<[T.FullRequestInfo], Text>) {
     try {
-      validate_driver(caller);
+      await validate_driver(caller);
       let requests_array: [T.RideRequestType] = List.toArray(pool_requests);
       // filter the array based on driver's location
       let local_requests: [T.RideRequestType] = filter_request(requests_array, query_passengers);
-      return #ok(passenger_details(local_requests));
+      return #ok(await passenger_details(local_requests));
     } catch e {
       return #err(Error.message(e));
     }
@@ -367,7 +401,8 @@ actor {
   public shared({caller}) func register_car(car: T.Car): async(Result.Result<(), Text>) {
     try {
       // check if the driver has already created an account
-      driver_already_exists(caller);
+      await check_user(caller);
+      await driver_already_exists(caller);
       // If the caller is not registered to the application he is not supposed to create an account
       let user: T.User = get_user_account(caller);
       // create an account if the account does not exist
@@ -384,13 +419,14 @@ actor {
   // logic after the driver has selected a passenger for the trip
   // this is the stage where we create a ride info object and add it to the list.
   public shared({caller}) func select_passenger(request_id: T.RequestID, date_of_ride: Nat): async(Result.Result<(), Text>) {
-    try{
+    try {
       // get the request if it exist
-      let request: T.RideRequestType = find_request(request_id);
+      await check_request(request_id);
+      let request: T.RideRequestType = extract_request(request_id);
       // update the request status to be accepted
       request.status := #Accepted;
       // approve the ride if the driver has selected the user
-      approve_ride(caller, request, date_of_ride);
+      await approve_ride(caller, request, date_of_ride);
       return #ok();
     } catch e {
       return #err(Error.message(e));
@@ -399,10 +435,10 @@ actor {
 
   public shared({caller}) func finished_ride(ride_id: T.RideID): async(Result.Result<(), Text>) {
     try {
-      let ride: T.RideInformation = get_ride_object(ride_id);
-      check_principals(ride.user_id, caller);
-      ride.ride_status := #RideCompleted;
-      ride.payment_status := #Paid;
+      await check_ride_info(ride_id);
+      let ride: T.RideInformation = get_ride(ride_id);
+      await check_principals(ride.user_id, caller);
+      update_ride_status(ride);
       return #ok();
     } catch e {
       return #err(Error.message(e));
@@ -415,6 +451,7 @@ actor {
 
   public func get_drivers_number(): async(Nat) {
     return drivers_map.size();
-  }
+  };
 
+  // record the lat and lng of the ride process
 };
